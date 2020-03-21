@@ -1,0 +1,111 @@
+---
+title: "A Simple Markov SIR Simulation Model of COVID-19 in the US"
+Date: 03/20/2020
+output:
+  html_notebook:
+    df_print: paged
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 10
+    highlight: tango
+    number_sections: yes
+    theme: readable
+    toc: yes
+  pdf_document:
+    toc: yes
+Author: Boris Houenou
+---
+```{r}
+install.packages(c("markovchain", "dplyr", "ggplot2","gridExtra", "grid","gganimate", "reshape"))
+```
+
+
+```{r}
+library(markovchain)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(gganimate)
+library(plotly)
+library(reshape)
+```
+# The Markovian  Model and Simulation
+95% of Susceptible people will remain in the Susceptible state,5% infected
+80% of those who are Infected will move to the Recovered Category and 20% remain infected between successive timesteps. 
+14% of the recovered are still susceptible and could relapse while 86% of the recovered will remain at that state.
+All the numbers are backed by the data reported in the studies cited by the Word Economic Forum article https://www.weforum.org/agenda/2020/03/coronavirus-recovery-what-happens-after-covid19/ 
+
+
+Running the markov model and calibration with actual parameters extracted from the behavior COVID-19 in the most affected countries
+```{r}
+####SIR for COVID-19 in the US
+mcSIRSL <- new("markovchain", states=c("S","I","R"),
+               transitionMatrix=matrix(data=c(0.95,0.05,0,0,0.2,0.80,0.14,0,0.86),
+                                       byrow=TRUE, nrow=3), name="SIR")
+initialState <- c(350000000,17000,16775)
+show(mcSIRSL)
+```
+A simple graphical representation of the SIR model with vertex the states and the edges representing the probability of transition of one state to another.
+```{r}
+plot(mcSIRSL,package="diagram")
+```
+
+Generating data based on the model simulation and storing in a data frame. 
+```{r}
+timesteps <- 12
+df <- data.frame( "timestep" = numeric(),
+                        "S" = numeric(), "I" = numeric(),"R" = numeric(),
+                        stringsAsFactors=FALSE)
+for (i in 0:timesteps) {
+  newrow <- as.list(c(i,round(as.numeric(initialState * mcSIRSL ^ i),0)))
+  df[nrow(df) + 1, ] <- newrow
+}
+
+head(df)
+```
+Plotting the simulation results of the model
+```{r}
+df_new <- reshape::melt(df, id = "timestep")
+head(df_new)
+
+p<-ggplot(df_new, aes(x = timestep, y = value, color = variable)) + 
+  geom_line(size = 1) + geom_point(size = 1) + 
+  scale_color_brewer(palette = "Set1")
+p
+#p+transition_reveal(as.numeric(timestep))
+
+```
+# The US Actual Data Analysis
+I query the data from data world at 
+https://data.world/covid-19-data-resource-hub/covid-19-case-counts/workspace/query?queryid=sample-0 
+```{r}
+data= read.csv('/Users/borishouenou/Downloads/covid19cases-covid-19-case-counts-QueryResult.csv')
+summary(data)
+str(data)
+```
+Recovered, death and infected in the US summary
+```{r}
+data_us<-data %>%
+  filter(country_region=='US') %>%
+  group_by(date, case_type) %>%
+  summarise(Total=sum(cases))
+```
+
+Subseting the period that correponds to the parameters used in the Markov model
+```{r}
+data_us<-data_us[173:228, ]
+```
+
+Plotting the Actual data of the cases in the US. Frankly, the US just got in to the hod bed of the diseases and the actual data plotted here will drastically evolve, and so will the shape of the curves. If the parameters of the experience in China and worldwide start kicking in the US model. In that hypothesis,the simulation in this model could match the US data.
+```{r}
+g<-ggplot(data_us, aes(x = date, y = Total, color = case_type)) + 
+  geom_line(size = 3) + geom_point(size = 2) +
+  theme_bw() +
+  scale_color_brewer(palette = "Set1")
+
+#g+transition_reveal(as.numeric(date))
+g  + theme(axis.text.x = element_text(angle = 90))
+```
+# Conclusion
+COVID-19 is just picking up in the US at the time of this analysis. Flattening out the curves will require on one hand,  that the large infection and death rates other countries experience be lower in the US, and on the other the recovery rate gets higher; which entails opposing a radical response to the disease. 
